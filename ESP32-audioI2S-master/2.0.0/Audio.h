@@ -178,6 +178,7 @@ public:
     void setBalance(int8_t bal = 0);
     void setVolume(uint8_t vol);
     uint8_t getVolume();
+    uint32_t getBassLevel();
 	uint8_t getI2sPort();
 
     uint32_t getAudioDataStartPos();

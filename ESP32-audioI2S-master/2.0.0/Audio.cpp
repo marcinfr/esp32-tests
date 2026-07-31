@@ -13,6 +13,8 @@
 #include "aac_decoder/aac_decoder.h"
 #include "flac_decoder/flac_decoder.h"
 
+volatile uint32_t bassLevel = 0;
+
 #ifdef SDFATFS_USED
 fs::SDFATFS SD_SDFAT;
 #endif
@@ -4237,6 +4239,12 @@ bool Audio::playSample(int16_t sample[2]) {
     sample[LEFTCHANNEL]  = sample[LEFTCHANNEL]  >> 1; // half Vin so we can boost up to 6dB in filters
     sample[RIGHTCHANNEL] = sample[RIGHTCHANNEL] >> 1;
 
+    uint32_t level =
+        abs((int32_t)sample[LEFTCHANNEL]) +
+        abs((int32_t)sample[RIGHTCHANNEL]);
+
+    bassLevel = (bassLevel * 9 + level) / 10;
+
     // Filterchain, can commented out if not used
     sample = IIR_filterChain0(sample);
     sample = IIR_filterChain1(sample);
@@ -4580,4 +4588,9 @@ int16_t* Audio::IIR_filterChain2(int16_t iir_in[2], bool clear){  // Infinite Im
     iir_out[RIGHTCHANNEL] = (int16_t) outSample[RIGHTCHANNEL];
 
     return iir_out;
+}
+
+uint32_t Audio::getBassLevel()
+{
+    return bassLevel;
 }
