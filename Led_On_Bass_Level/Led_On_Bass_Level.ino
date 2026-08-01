@@ -32,7 +32,7 @@ void setup() {
 
   audio.setPinout(I2S_BCLK, I2S_LRC, I2S_DOUT);
 
-  audio.setVolume(15);
+  audio.setVolume(20);
 
   audio.connecttoFS(SD, "/song01.mp3");
 
@@ -44,10 +44,10 @@ void loop() {
   audio.loop();
 
   // Czy wykryto uderzenie basu?
-  if (audio.getBassLevel()) {
+  if (audio.getBassLevel() > 5000) {
     digitalWrite(LED_PIN, HIGH);
   }
-  else {
+  else {`
     digitalWrite(LED_PIN, LOW);
   }
 }
