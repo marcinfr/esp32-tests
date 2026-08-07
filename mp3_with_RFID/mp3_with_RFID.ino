@@ -270,26 +270,23 @@ void setup()
   }
 }
 
-void goToLightSleep() { 
-  //Serial.println("Brak karty -> LIGHT SLEEP"); 
-  // Wszystkie LED wyłączone przed snem 
-  digitalWrite(LED_PIN, LOW); 
-  digitalWrite(LED_PIN_2, LOW); 
-  digitalWrite(BLUE_LED, LOW);
-  // Wybudzenie po 500 ms 
-  esp_sleep_enable_timer_wakeup(SLEEP_TIME_US); 
-  // Wejście w Light Sleep. 
-  // Funkcja wróci tutaj po wybudzeniu. 
-  esp_light_sleep_start(); 
-  //Serial.println("ESP32 wybudzony"); 
-
-  // deep sleep
-  esp_sleep_disable_wakeup_source(
-        ESP_SLEEP_WAKEUP_ALL
-    );
-
-  esp_sleep_enable_ext0_wakeup(GPIO_NUM_27, 0);
-  esp_deep_sleep_start();
+void goToSleep(bool deep = true) {
+  if (deep && !cardPresent) {
+    Serial.println("DEEP SLEEP");
+    esp_sleep_disable_wakeup_source(ESP_SLEEP_WAKEUP_ALL);
+    esp_sleep_enable_ext0_wakeup(GPIO_NUM_27, 0);
+    esp_deep_sleep_start();
+  } else {
+    Serial.println("LIGHT SLEEP"); 
+    // Wszystkie LED wyłączone przed snem 
+    digitalWrite(LED_PIN, LOW); 
+    digitalWrite(LED_PIN_2, LOW); 
+    digitalWrite(BLUE_LED, LOW);
+    // Wybudzenie po SLEEP_TIME_US ms 
+    esp_sleep_enable_timer_wakeup(SLEEP_TIME_US); 
+    // Wejście w Light Sleep. 
+    esp_light_sleep_start(); 
+  }
 }
 
 void playAudio(String filename)
@@ -314,6 +311,17 @@ void playAudio(String filename)
   }
 }
 
+void stopAudio()
+{
+    if (audioIsRunning) {
+      audioIsRunning = false;
+      systemAudioIsRunning = false;
+      audio.stopSong();
+      digitalWrite(LED_PIN_2, LOW);
+      digitalWrite(LED_PIN, LOW);
+    }
+}
+
 void setVolume()
 {
   int potValue = analogRead(VOLUME_PIN);
@@ -327,9 +335,10 @@ void setVolume()
 void loop()
 {
   if ((!cardPresent || !audioIsRunning) && !systemAudioIsRunning) { 
-    /* * Gdy nie ma karty: * * 1. ESP32 śpi 500 ms * 2. budzi się * 3. sprawdza PN532 * * Dzięki temu nie wykonujemy cały czas * pustej pętli procesora. */ 
-    goToLightSleep(); 
+    goToSleep(); 
   }
+
+  digitalWrite(BLUE_LED, HIGH);
 
 
   // ==================================================
@@ -341,12 +350,9 @@ void loop()
   audio.loop();
 
   if (!audio.isRunning() && audioIsRunning) {
-    audioIsRunning = false;
-    systemAudioIsRunning = false;
+    stopAudio();
     Serial.println("MP3 zakonczone");
   }
-  digitalWrite(BLUE_LED, HIGH);
-
 
   // ==================================================
   // RFID
@@ -434,20 +440,8 @@ void loop()
     if (cardPresent)
     {
       cardPresent = false;
-      audioIsRunning = false;
-
       Serial.println("KARTA ODDALONA");
-      digitalWrite(LED_PIN_2, LOW);
-
-
-      digitalWrite(LED_PIN, LOW);
-
-
-      // ----------------------------------------------
-      // STOP MP3
-      // ----------------------------------------------
-
-      audio.stopSong();
+      stopAudio();
     }
   }
 }
