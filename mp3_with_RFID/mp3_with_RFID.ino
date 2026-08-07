@@ -94,6 +94,15 @@ bool readNDEF(uint8_t *uid, uint8_t uidLength)
 }
 
 
+// ========================================== 
+// PRZERWANIE IRQ 
+// ========================================== 
+void IRAM_ATTR pn532IRQ() 
+{ 
+  Serial.println("IRQ!!");
+  //irqFlag = true; 
+}
+
 // =====================================================
 // Odczyt tekstu NDEF
 // =====================================================
@@ -234,6 +243,14 @@ void setup()
   nfc.SAMConfig();
   //nfc.setPassiveActivationRetries(1);
 
+  // to do IRQ
+  //pinMode(PN532_IRQ, INPUT_PULLUP);
+  //attachInterrupt(
+  //  digitalPinToInterrupt(PN532_IRQ),
+  //  pn532IRQ,
+  //  FALLING
+  //);
+
   if (!SD.begin(SD_CS)) {
     Serial.println("SD NIE wykryta");
     while (1);
@@ -243,7 +260,14 @@ void setup()
   audio.setPinout(I2S_BCLK, I2S_LRC, I2S_DOUT);
   //audio.setVolume(100);
   setVolume();
-  playSystemAudio("welcome");
+
+  esp_sleep_wakeup_cause_t cause = esp_sleep_get_wakeup_cause();
+  if ((int)cause == 0) { 
+    playSystemAudio("welcome");
+  } else {
+    // wakeup by card
+    systemAudioIsRunning = true;
+  }
 }
 
 void goToLightSleep() { 
@@ -258,6 +282,14 @@ void goToLightSleep() {
   // Funkcja wróci tutaj po wybudzeniu. 
   esp_light_sleep_start(); 
   //Serial.println("ESP32 wybudzony"); 
+
+  // deep sleep
+  esp_sleep_disable_wakeup_source(
+        ESP_SLEEP_WAKEUP_ALL
+    );
+
+  esp_sleep_enable_ext0_wakeup(GPIO_NUM_27, 0);
+  esp_deep_sleep_start();
 }
 
 void playAudio(String filename)
