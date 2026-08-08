@@ -28,7 +28,7 @@ Adafruit_PN532 nfc(PN532_IRQ, PN532_RESET, &Wire);
 bool cardPresent = false;
 bool audioIsRunning = false;
 bool systemAudioIsRunning = false;
-unsigned long lastRFIDCheck = 0; // RFID sprawdzamy co 100 ms. // Audio działa pomiędzy sprawdzeniami bez przerw. 
+unsigned long lastRFIDCheck = 0; // RFID sprawdzamy co RFID_INTERVAL ms. // Audio działa pomiędzy sprawdzeniami bez przerw. 
 const unsigned long RFID_INTERVAL = 1000;
 
 // Klucz NDEF dla MIFARE Classic
@@ -91,16 +91,6 @@ bool readNDEF(uint8_t *uid, uint8_t uidLength)
   }
 
   return bufferLength > 0;
-}
-
-
-// ========================================== 
-// PRZERWANIE IRQ 
-// ========================================== 
-void IRAM_ATTR pn532IRQ() 
-{ 
-  Serial.println("IRQ!!");
-  //irqFlag = true; 
 }
 
 // =====================================================
@@ -241,15 +231,6 @@ void setup()
   nfc.begin();
   nfc.getFirmwareVersion();
   nfc.SAMConfig();
-  //nfc.setPassiveActivationRetries(1);
-
-  // to do IRQ
-  //pinMode(PN532_IRQ, INPUT_PULLUP);
-  //attachInterrupt(
-  //  digitalPinToInterrupt(PN532_IRQ),
-  //  pn532IRQ,
-  //  FALLING
-  //);
 
   if (!SD.begin(SD_CS)) {
     Serial.println("SD NIE wykryta");
@@ -258,15 +239,16 @@ void setup()
 
   Serial.println("SD OK");
   audio.setPinout(I2S_BCLK, I2S_LRC, I2S_DOUT);
-  //audio.setVolume(100);
   setVolume();
 
   esp_sleep_wakeup_cause_t cause = esp_sleep_get_wakeup_cause();
   if ((int)cause == 0) { 
     playSystemAudio("welcome");
   } else {
+    Serial.println("wakeup by card");
     // wakeup by card
-    systemAudioIsRunning = true;
+    //cardPresent= true;
+    //systemAudioIsRunning = true;
   }
 }
 
@@ -274,7 +256,7 @@ void goToSleep(bool deep = true) {
   if (deep && !cardPresent) {
     Serial.println("DEEP SLEEP");
     esp_sleep_disable_wakeup_source(ESP_SLEEP_WAKEUP_ALL);
-    esp_sleep_enable_ext0_wakeup(GPIO_NUM_27, 0);
+    esp_sleep_enable_ext0_wakeup((gpio_num_t)PN532_IRQ, 0);
     esp_deep_sleep_start();
   } else {
     Serial.println("LIGHT SLEEP"); 
@@ -313,12 +295,13 @@ void playAudio(String filename)
 
 void stopAudio()
 {
-    if (audioIsRunning) {
+    if (audioIsRunning || systemAudioIsRunning) {
       audioIsRunning = false;
       systemAudioIsRunning = false;
       audio.stopSong();
       digitalWrite(LED_PIN_2, LOW);
       digitalWrite(LED_PIN, LOW);
+      Serial.println("MP3 zakonczone");
     }
 }
 
@@ -329,45 +312,31 @@ void setVolume()
   audio.setVolume(volume);
 }
 
-// =====================================================
-// LOOP
-// =====================================================
-void loop()
+void playLedShow()
 {
-  if ((!cardPresent || !audioIsRunning) && !systemAudioIsRunning) { 
-    goToSleep(); 
-  }
+    if (audio.getBassLevel() > 5000) {
+      digitalWrite(LED_PIN, HIGH);
+    } else {
+      digitalWrite(LED_PIN, LOW);
+    }
 
-  digitalWrite(BLUE_LED, HIGH);
+    if (audio.getBassLevel() < 1000) {
+      digitalWrite(LED_PIN_2, HIGH);
+    } else {
+      digitalWrite(LED_PIN_2, LOW);
+    }
+}
 
+void processRFID() {
 
-  // ==================================================
-  // AUDIO
-  // ==================================================
-
-  setVolume();
-  // To musi być wykonywane bardzo często!
-  audio.loop();
-
-  if (!audio.isRunning() && audioIsRunning) {
-    stopAudio();
-    Serial.println("MP3 zakonczone");
-  }
-
-  // ==================================================
-  // RFID
-  // ==================================================
-
-  if (millis() - lastRFIDCheck < RFID_INTERVAL)
+  if (audioIsRunning && millis() - lastRFIDCheck < RFID_INTERVAL)
   {
     return;
   }
-
   lastRFIDCheck = millis();
 
   uint8_t uid[7];
   uint8_t uidLength;
-
 
   bool success = nfc.readPassiveTargetID(
     PN532_MIFARE_ISO14443A,
@@ -376,27 +345,16 @@ void loop()
     20
   );
 
-
-  // ==================================================
   // KARTA WYKRYTA
-  // ==================================================
-
-  if (success)
-  {
-    if (!cardPresent)
-    {
+  if (success) {
+    if (!cardPresent) {
       cardPresent = true;
 
       Serial.println("KARTA PRZYLOZONA");
       digitalWrite(LED_PIN_2, HIGH);
 
-
-      // ----------------------------------------------
       // Odczytaj NDEF
-      // ----------------------------------------------
-
-      if (readNDEF(uid, uidLength))
-      {
+      if (readNDEF(uid, uidLength)) {
         String text = getNDEFText();
         if (text.length() > 0) {
 
@@ -405,43 +363,35 @@ void loop()
         }
       }
     }
-
-
-    // ----------------------------------------------
-    // LED według poziomu basu
-    // ----------------------------------------------
-
-    if (audio.getBassLevel() > 4000)
-    {
-      digitalWrite(LED_PIN, HIGH);
-    }
-    else
-    {
-      digitalWrite(LED_PIN, LOW);
-    }
-
-    if (audio.getBassLevel() < 2000)
-    {
-      digitalWrite(LED_PIN_2, HIGH);
-    }
-    else
-    {
-      digitalWrite(LED_PIN_2, LOW);
-    }
-  }
-
-
-  // ==================================================
-  // KARTY NIE MA
-  // ==================================================
-
-  else
-  {
-    if (cardPresent)
-    {
+  } else {
+    // KARTY NIE MA
+    if (cardPresent) {
       cardPresent = false;
       Serial.println("KARTA ODDALONA");
       stopAudio();
     }
+  }
+}
+
+// =====================================================
+// LOOP
+// =====================================================
+void loop()
+{
+  digitalWrite(BLUE_LED, HIGH);
+
+  setVolume();
+  // To musi być wykonywane bardzo często!
+  audio.loop();
+  playLedShow();
+
+  processRFID();
+
+  if (!audio.isRunning() && audioIsRunning) {
+    stopAudio();
+  }
+
+  if ((!cardPresent || !audioIsRunning) && !systemAudioIsRunning) { 
+    goToSleep(); 
   }
 }
